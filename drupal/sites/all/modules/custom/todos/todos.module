@@ -1,0 +1,334 @@
+<?php
+
+/**
+ * Implementation of hook_node_info()
+ *
+ */
+function todos_node_info() {
+  $info['todo'] = array(
+    'name' => "Todo",
+    'base' => 'todos',
+    'description' => t("A Todo note data."),
+    'has_title' => TRUE,
+    'title_label' => t("Title"),
+    'custom' => 0,
+    'modified' => 0,
+    'locked' => 1,
+    'disabled' => 0,
+  );
+
+  return $info;
+}
+
+/**
+ * Implementation of hook_node_view()
+ *
+ */
+function todos_node_view($node, $view_mode, $langcode = NULL) {
+  if ($node->type == 'todo' && $view_mode == 'full') {
+    $node->content['body'] = array(
+      '#markup' => "TODO NOTE BODY TEMPLATE",
+      '#weight' => 10,
+    );
+  }
+}
+
+/**
+ * Implementation of hook_form()
+ *
+ */
+function todos_form($node, &$form_state) {
+  $form = array();
+
+  if ($node->type == 'todo') {
+    $form['title'] = array(
+      '#type' => 'textfield',
+      '#title' => t("Title"),
+      '#default_value' => !empty($node->title) ? $node->title : '',
+      '#required' => TRUE,
+      '#weight' => -5,
+    );
+  }
+
+  return $form;
+}
+
+/**
+ * Implementation of hook_ctools_plugin_api()
+ *
+ */
+function todos_ctools_plugin_api($owner, $api) {
+  if ($owner == 'services' && $api == 'services') {
+    return array('version' => 3);
+  }
+}
+
+/**
+ * Implementation of hook_default_services_endpoint()
+ *
+ */
+function todos_default_services_endpoint() {
+  $endpoint = new stdClass();
+
+  $endpoint->disabled = FALSE;
+  $endpoint->name = 'todos_api';
+  $endpoint->api_version = 3;
+  $endpoint->server = 'rest_server';
+  $endpoint->debug = 1;
+  $endpoint->path = 'json-rest';
+  $endpoint->authentication = array();
+
+  $endpoint->server_settings = array(
+    'formatters' => array(
+      'json' => TRUE,
+      'bencode' => FALSE,
+      'jsonp' => FALSE,
+      'php' => FALSE,
+      'rss' => FALSE,
+      'xml' => FALSE,
+    ),
+    'parsers' => array(
+      'application/json' => TRUE,
+      'multipart/form-data' => TRUE,
+      'application/vnd.php.serialized' => FALSE,
+      'application/x-www-form-urlencoded' => FALSE,
+      'application/xml' => FALSE,
+      'text/xml' => FALSE,
+    ),
+  );
+
+  $endpoint->resources = array(
+    'todo' => array(
+      'operations' => array(
+        'create' => array('enabled' => '1'),
+        'retrieve' => array('enabled' => '1'),
+        'update' => array('enabled' => '1'),
+        'delete' => array('enabled' => '1'),
+        'index' => array('enabled' => '1'),
+      ),
+    ),
+  );
+
+  return array($endpoint);
+}
+
+
+/**
+ * Implementation of hook_services_resources()
+ *
+ */
+function todos_services_resources() {
+  $resources['todo']['create'] = array(
+    'callback' => 'todos_todo_create',
+    'help' => "Create a new Todo Note node.",
+    'access arguments' => array('access content'),
+    'access arguments append' => FALSE,
+    'args' => array(
+      array(
+        'name' => 'title',
+        'optional' => FALSE,
+        'source' => array('data' => 'title'),
+        'type' => 'string',
+      ),
+    ),
+  );
+
+  $resources['todo']['retrieve'] = array(
+    'callback' => 'todos_todo_retrieve',
+    'help' => "Retrieve a Todo Note node given the NID.",
+    'access arguments' => array('access content'),
+    'access arguments append' => FALSE,
+    'args' => array(
+      array(
+        'name' => 'nid',
+        'optional' => FALSE,
+        'source' => array('path' => 0),
+        'type' => 'int',
+      ),
+    ),
+  );
+
+  $resources['todo']['update'] = array(
+    'callback' => 'todos_todo_update',
+    'help' => "Update a Todo Note node given the NID and the new title.",
+    'access arguments' => array('access content'),
+    'access arguments append' => FALSE,
+    'args' => array(
+      array(
+        'name' => 'nid',
+        'optional' => FALSE,
+        'source' => array('path' => 0),
+        'type' => 'int',
+      ),
+      array(
+        'name' => 'is_completed',
+        'optional' => FALSE,
+        'source' => array('data' => 'isCompleted'),
+        'type' => 'string',
+      ),
+    ),
+  );
+
+  $resources['todo']['delete'] = array(
+    'callback' => 'todos_todo_delete',
+    'help' => "Delete a Todo Note node given the NID.",
+    'access arguments' => array('access content'),
+    'access arguments append' => FALSE,
+    'args' => array(
+      array(
+        'name' => 'nid',
+        'optional' => FALSE,
+        'source' => array('path' => 0),
+        'type' => 'int',
+      )
+    ),
+  );
+
+  $resources['todo']['index'] = array(
+    'callback' => 'todos_todo_index',
+    'help' => "Retrieve a list of Todo Note node(s) for a given set of parameters.",
+    'access arguments' => array('access content'),
+    'access arguments append' => FALSE,
+    'args' => array(
+      array(
+        'name' => 'sort',
+        'optional' => TRUE,
+        'source' => array('param' => 'sort'),
+        'default' => 'ASC',
+        'type' => 'string',
+      ),
+    ),
+  );
+
+
+  return $resources;
+}
+
+/**
+ * Resource callback to create a Todo note.
+ *
+ * @param string $title
+ *  Title of the Todo note.
+ * @return int
+ *  NID of the node that is successfully created, otherwise FALSE.
+ */
+function todos_todo_create($title) {
+  if (empty($title)) {
+    services_error("Given title is null.");
+  }
+
+  $node = new stdClass();
+  $node->type = 'todo';
+  $node->language = 'und';
+  $node->uid = 1;
+  $node->status = 1;
+  $node->promote = 1;
+  $node->sticky = 0;
+  $node->comment = 0;
+
+  $node->title = $title;
+
+  node_save($node);
+
+  $data = new stdClass();
+  $data->nid = $node->nid;
+  $data->vid = $node->vid;
+  $data->title = $node->title;
+  $data->isCompleted = (boolean) !$node->status;
+  $data->created = $node->created;
+
+  return $data->nid > 0 ? $data : FALSE;
+}
+
+/**
+ * Resource callback to retrieve a Todo note.
+ *
+ * @param string $nid
+ *  NID of the Todo note.
+ * @return array
+ *  An array of the note data if found, otherwise FALSE.
+ */
+function todos_todo_retrieve($nid) {
+  if (is_null($nid) && !is_numeric($nid)) {
+    services_error("Given NID is invalid.");
+  }
+
+  if (!($node = node_load($nid))) {
+    services_error("Todo Note is not found with the given NID.");
+  }
+
+  $data = array(
+    'nid' => $node->nid,
+    'vid' => $node->vid,
+    'title' => $node->title,
+    'timestamp' => $node->changed,
+  );
+
+  return $data;
+}
+
+/**
+ * Resource callback to update a Todo note.
+ *
+ * @param string $nid
+ *  NID of the Todo note.
+ * @param string $title
+ *  Title of the Todo note to be updated.
+ */
+function todos_todo_update($nid, $is_completed = FALSE) {
+  if (is_null($nid) && !is_numeric($nid)) {
+    services_error("Given NID is invalid.");
+  }
+
+
+  if (!($node = node_load($nid))) {
+    services_error("Todo Note is not found with the given NID.");
+  }
+
+  $node->status = !$is_completed;
+  $node->changed = time();
+  node_save($node);
+}
+
+/**
+ * Resource callback to delete a Todo note.
+ *
+ * @param string $nid
+ *  NID of the Todo note.
+ */
+function todos_todo_delete($nid) {
+  if (is_null($nid) && !is_numeric($nid)) {
+    services_error("Given NID is invalid.");
+  }
+
+  node_delete($nid);
+}
+
+
+/**
+ * Resource callback to retrieve a list of Todo notes.
+ *
+ * @param string $sort
+ *  Sort format of the listing. Either ASC or DESC.
+ */
+function todos_todo_index($sort) {
+  $data = array();
+
+  $query = db_select('node', 'n')
+    ->fields('n', array('nid', 'vid', 'title', 'status', 'created', 'changed'))
+    ->condition('n.type', 'todo', '=');
+  $result = $query->execute();
+
+  foreach ($result as $row) {
+    $node = new stdClass();
+    $node->nid = $row->nid;
+    $node->vid = $row->vid;
+    $node->title = $row->title;
+    $node->isCompleted = (boolean) !$row->status;
+    $node->created = $row->created;
+
+    $data[] = $node;
+  }
+
+  return $data;
+}
